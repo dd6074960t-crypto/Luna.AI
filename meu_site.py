@@ -1,30 +1,79 @@
 import streamlit as st
 from groq import Groq
+import PyPDF2 # Nova ferramenta para ler PDFs!
 
-# ⬇️ COLE A SUA CHAVE DO GROQ (que começa com gsk_) AQUI DENTRO DAS ASPAS ⬇️
+# 1. DESIGN DO SITE (Fica mais largo e moderno)
+st.set_page_config(page_title="Luna AI", page_icon="🌙", layout="wide")
+
+# Conectando com o cofre de segurança
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
-# Design do site
-st.set_page_config(page_title="Luna AI", page_icon="🌙")
-st.title("🌙 Luna AI")
-st.write("Olá! Eu sou a Luna, sua assistente virtual. Como posso te ajudar hoje?")
+# 2. CRIANDO A MEMÓRIA DA LUNA
+if "mensagens" not in st.session_state:
+    # Se a conversa acabou de começar, dá a personalidade pra ela
+    st.session_state.mensagens = [
+        {"role": "system", "content": "Você é a Luna AI, uma assistente virtual inteligente. Ajude o usuário com tarefas, resumos e estudos. Responda sempre em português do Brasil e use emojis amigáveis."}
+    ]
 
-pergunta_do_usuario = st.text_input("Digite sua pergunta para a Luna:")
+# 3. MENU LATERAL (Sidebar bonita)
+with st.sidebar:
+    st.title("🌙 Luna AI")
+    st.write("Sua assistente pessoal de tarefas.")
+    st.divider() # Linha de separação
+    
+    st.subheader("📎 Enviar Arquivos")
+    arquivo_up = st.file_uploader("Envie um PDF ou Texto aqui:", type=["pdf", "txt"])
+    
+    st.divider()
+    if st.button("🗑️ Limpar Conversa"):
+        st.session_state.mensagens = [st.session_state.mensagens[0]]
+        st.rerun()
 
-if st.button("Enviar"):
-    if pergunta_do_usuario == "":
-        st.warning("Por favor, digite uma pergunta primeiro!")
-    else:
-        with st.spinner('A Luna está pensando na velocidade da luz...'):
-            # Mandando a pergunta pro cérebro do Groq
-            resposta = client.chat.completions.create(
-                model="llama-3.1-8b-instant", # Este é o cérebro super rápido que vamos usar
-                messages=[
-                    {"role": "system", "content": "Você se chama Luna AI. Você é uma inteligência artificial amigável, inteligente e muito prestativa. Fale português do Brasil."},
-                    {"role": "user", "content": pergunta_do_usuario}
-                ]
-            )
-            
-            texto_resposta = resposta.choices[0].message.content
-            st.success("Luna AI diz:")
-            st.write(texto_resposta)
+# 4. TELA PRINCIPAL DE CHAT (Estilo WhatsApp)
+st.title("💬 Conversa")
+
+# Mostra todas as mensagens antigas na tela
+for msg in st.session_state.mensagens:
+    if msg["role"] != "system":
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+# 5. CAIXA DE TEXTO LÁ EMBAIXO
+pergunta = st.chat_input("Digite sua mensagem para a Luna...")
+
+if pergunta:
+    # Mostra a pergunta do usuário na tela
+    with st.chat_message("user"):
+        st.markdown(pergunta)
+
+    # 6. LEITURA DE ARQUIVO (A mágica!)
+    texto_arquivo = ""
+    if arquivo_up is not None:
+        if arquivo_up.name.endswith(".txt"):
+            texto_arquivo = arquivo_up.getvalue().decode("utf-8")
+        elif arquivo_up.name.endswith(".pdf"):
+            leitor_pdf = PyPDF2.PdfReader(arquivo_up)
+            for pagina in leitor_pdf.pages:
+                texto_arquivo += pagina.extract_text() + "\n"
+        
+        texto_arquivo = f"\n\n[O USUÁRIO ENVIOU ESTE ARQUIVO PARA VOCÊ LER:\n{texto_arquivo}]"
+
+    # Salva a pergunta (junto com o texto do arquivo, se tiver) na memória
+    st.session_state.mensagens.append({"role": "user", "content": pergunta + texto_arquivo})
+
+    # 7. RESPOSTA DA LUNA
+    with st.chat_message("assistant"):
+        placeholder = st.empty()
+        placeholder.markdown("Luna está digitando... ✍️")
+        
+        # Manda TODA A MEMÓRIA para o Groq
+        resposta = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=st.session_state.mensagens
+        )
+        
+        texto_resposta = resposta.choices[0].message.content
+        placeholder.markdown(texto_resposta)
+    
+    # Salva a resposta na memória
+    st.session_state.mensagens.append({"role": "assistant", "content": texto_resposta})
